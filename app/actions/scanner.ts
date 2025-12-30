@@ -112,7 +112,8 @@ export async function verifyTicket(
       ticket: { 
         name: ticket.attendeeName || "Unknown Guest", 
         type: ticketType.name, 
-        id: ticket._id.toString() 
+        id: ticket._id.toString(),
+        ticketNumber: ticket.ticketCode 
       } 
     };
 

@@ -8,6 +8,7 @@ interface EventSelectorProps {
   events: EventSummary[];
   onSelect: (eventId: string) => void;
   isLoading?: boolean;
+  error?: string | null;
 }
 
 export default function EventSelector({

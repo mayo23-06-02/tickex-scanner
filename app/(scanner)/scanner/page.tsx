@@ -188,8 +188,8 @@ export default function ScannerPage() {
               setScanResult(null);
             }, 2000);
           }
-        } else {
-          showNotification("error", response.message || "Scan failed");
+        } else if (!response.success) {
+          showNotification("error", response.error || "Scan failed");
         }
       } catch (err) {
         console.error("Scan error", err);
@@ -224,9 +224,7 @@ export default function ScannerPage() {
     if (!currentEvent) return { success: 0, failed: 0 };
 
     const successLogs = logs.filter((log) => log.status === "checked_in");
-    const failedLogs = logs.filter(
-      (log) => log.status === "invalid" || log.status === "already_used"
-    );
+    const failedLogs = logs.filter((log) => log.status === "revoked");
 
     return {
       success: successLogs.length,
