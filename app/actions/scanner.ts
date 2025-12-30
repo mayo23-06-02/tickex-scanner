@@ -164,7 +164,7 @@ export async function getEventLogs(eventId: string): Promise<TicketLogItem[]> {
     })
     .populate({
       path: 'orderId',
-      select: 'userId',  // Changed from 'user' to 'userId'
+      select: 'userId',  // Using userId field
       model: 'Order'
     })
     .sort({ updatedAt: -1 })
@@ -215,13 +215,10 @@ export async function getEventLogs(eventId: string): Promise<TicketLogItem[]> {
       // Check if ticket has attendee name (this might be different from buyer)
       if (ticket.attendeeName && ticket.attendeeName.trim()) {
         // If we have an attendee name, use that as the display name
-        // But keep the buyer info for reference
         console.log(`Ticket ${ticket._id} has attendee name: ${ticket.attendeeName}`);
-        // Note: We'll use attendeeName for display, but keep buyerName separate
-        // for the buyerName field
       }
 
-      // Format the result
+      // Format the result - only include properties that exist in TicketLogItem type
       enrichedTickets.push({
         id: ticket._id.toString(),
         ticketCode: ticket.ticketCode,
@@ -234,9 +231,8 @@ export async function getEventLogs(eventId: string): Promise<TicketLogItem[]> {
         purchaseDate: ticket.createdAt ? new Date(ticket.createdAt).toLocaleDateString() : "Unknown",
         orderId: ticket.orderId ? ticket.orderId._id.toString() : "N/A",
         buyerName: buyerName,
-        buyerEmail: buyerEmail,
-        scannedBy: ticket.scannedBy || "Unknown",
-        checkInMethod: ticket.checkInMethod || "qr_scan"
+        buyerEmail: buyerEmail
+        // Removed scannedBy and checkInMethod as they don't exist in TicketLogItem type
       });
     }
 
@@ -295,7 +291,7 @@ export async function getEventLogsAggregate(eventId: string): Promise<TicketLogI
       {
         $lookup: {
           from: 'users',
-          localField: 'order.userId',  // Changed from 'order.user' to 'order.userId'
+          localField: 'order.userId',  // Using userId field
           foreignField: '_id',
           as: 'user'
         }
@@ -315,8 +311,6 @@ export async function getEventLogsAggregate(eventId: string): Promise<TicketLogI
           updatedAt: 1,
           createdAt: 1,
           attendeeName: 1,
-          scannedBy: 1,
-          checkInMethod: 1,
           'order._id': 1,
           'order.userId': 1,
           'ticketType.name': 1,
@@ -359,68 +353,13 @@ export async function getEventLogsAggregate(eventId: string): Promise<TicketLogI
         purchaseDate: item.createdAt ? new Date(item.createdAt).toLocaleDateString() : "Unknown",
         orderId: item.order?._id?.toString() || "N/A",
         buyerName: buyerName,
-        buyerEmail: item.user?.email,
-        scannedBy: item.scannedBy || "Unknown",
-        checkInMethod: item.checkInMethod || "qr_scan"
+        buyerEmail: item.user?.email
+        // Removed scannedBy and checkInMethod as they don't exist in TicketLogItem type
       };
     });
 
   } catch (error) {
     console.error("Aggregation error:", error);
     return [];
-  }
-}
-
-/**
- * Get detailed user information for a specific order
- */
-export async function getUserInfoFromOrder(orderId: string): Promise<{
-  name: string;
-  email: string;
-  userId: string;
-} | null> {
-  await dbConnect();
-
-  try {
-    if (!mongoose.Types.ObjectId.isValid(orderId)) {
-      return null;
-    }
-
-    // Get the order with userId
-    const order = await Order.findById(orderId)
-      .select('userId')
-      .lean();
-
-    if (!order || !order.userId) {
-      return null;
-    }
-
-    // Get user information
-    const user = await User.findById(order.userId)
-      .select('name email firstName lastName')
-      .lean();
-
-    if (!user) {
-      return null;
-    }
-
-    // Construct name
-    let name = user.name;
-    if (!name && (user.firstName || user.lastName)) {
-      name = `${user.firstName || ''} ${user.lastName || ''}`.trim();
-    }
-    if (!name) {
-      name = "User Account";
-    }
-
-    return {
-      name,
-      email: user.email || "No email",
-      userId: user._id.toString()
-    };
-
-  } catch (error) {
-    console.error("Error getting user info from order:", error);
-    return null;
   }
 }
