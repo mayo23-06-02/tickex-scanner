@@ -19,17 +19,17 @@ export default function EventSelector({
   // currently just listing them beautifully.
 
   return (
-    <div className="flex flex-col h-full bg-linear-to-b from-gray-900 to-black p-6 text-white">
+    <div className="flex flex-col h-full bg-linear-to-b from-blue-900 to-blue-200 p-6 text-white">
       <div className="mb-8 mt-6">
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
         >
-          <h1 className="text-3xl font-bold tracking-tight bg-clip-text text-transparent bg-linear-to-r from-emerald-400 to-cyan-500">
+          <h1 className="text-3xl font-bold tracking-tight bg-clip-text text-transparent bg-linear-to-r from-blue-400 to-blue-500">
             Select Event
           </h1>
-          <p className="text-gray-400 mt-2 text-sm">
+          <p className="text-gray-100 mt-2 text-sm">
             Choose an event to start scanning tickets.
           </p>
         </motion.div>
@@ -71,13 +71,13 @@ export default function EventSelector({
                   hidden: { opacity: 0, y: 20 },
                   show: { opacity: 1, y: 0 },
                 }}
-                className="group relative w-full text-left bg-gray-900/50 hover:bg-gray-800 border border-white/10 hover:border-emerald-500/50 p-5 rounded-2xl transition-all duration-300 shadow-lg hover:shadow-emerald-500/10 overflow-hidden"
+                className="group relative w-full text-left bg-gray-900/50 hover:bg-gray-00 border border-white/10 hover:border-blue-500/50 p-5 rounded-2xl transition-all duration-300 shadow-lg hover:shadow-blue-500/10 overflow-hidden"
               >
-                <div className="absolute top-0 left-0 bottom-0 w-1 bg-linear-to-b from-emerald-500 to-cyan-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                <div className="absolute top-0 left-0 bottom-0 w-1 bg-linear-to-b from-blue-500 to-blue-500 opacity-0 group-hover:opacity-100 transition-opacity" />
 
                 <div className="flex justify-between items-start mb-3">
                   <div>
-                    <h3 className="text-xl font-bold text-white group-hover:text-emerald-400 transition-colors">
+                    <h3 className="text-xl font-bold text-white group-hover:text-blue-400 transition-colors">
                       {event.name}
                     </h3>
                     <div className="flex items-center gap-2 mt-1 text-sm text-gray-400">
@@ -113,12 +113,12 @@ export default function EventSelector({
                   </div>
                   <div className="h-2 w-full bg-white/5 rounded-full overflow-hidden">
                     <div
-                      className="h-full bg-linear-to-r from-emerald-500 to-cyan-500 transition-all duration-1000 ease-out"
+                      className="h-full bg-linear-to-r from-blue-500 to-cyan-500 transition-all duration-1000 ease-out"
                       style={{ width: `${percentage}%` }}
                     />
                   </div>
                   <div className="flex justify-between items-center mt-2 text-xs">
-                    <span className="text-emerald-400 font-mono bg-emerald-400/10 px-2 py-0.5 rounded">
+                    <span className="text-blue-400 font-mono bg-blue-400/10 px-2 py-0.5 rounded">
                       {event.stats.checkedIn.toLocaleString()} In
                     </span>
                     <span className="text-gray-500">
