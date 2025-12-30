@@ -8,6 +8,7 @@ interface TicketLogListProps {
   logs: TicketLogItem[];
   isLoading: boolean;
   onRefresh: () => void;
+  onExport?: () => void;
 }
 
 export default function TicketLogList({

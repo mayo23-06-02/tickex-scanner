@@ -23,6 +23,7 @@ export async function getScannerEvents(): Promise<EventSummary[]> {
     const events = await Event.find({}).sort({ startDate: 1 }).limit(20).lean();
 
     // 2. Calculate Stats for each event
+    // Note: In high-scale production, this should be a cached aggregation or separate stats collection.
     const eventsWithStats = await Promise.all(events.map(async (event: any) => {
         // Find all TicketTypes for this event
         const ticketTypes = await TicketType.find({ event: event._id }).select('_id');
@@ -126,117 +127,101 @@ export async function verifyTicket(
 }
 
 /**
- * Fetches the recent activity logs for an event with user information
- * FIXED: Now correctly uses `userId` field from Order model
+ * Fetches the recent activity logs for an event
+ * Simple approach: Ticket → Order → User
  */
 export async function getEventLogs(eventId: string): Promise<TicketLogItem[]> {
   await dbConnect();
 
   try {
-    // 1. Validate eventId
-    if (!mongoose.Types.ObjectId.isValid(eventId)) {
-      console.error("Invalid eventId:", eventId);
-      return [];
-    }
-
-    // 2. Get all ticket types for this event
-    const ticketTypes = await TicketType.find({ event: eventId })
-      .select("_id name")
-      .lean();
-    
-    if (ticketTypes.length === 0) {
-      console.log(`No ticket types found for event ${eventId}`);
-      return [];
-    }
-
+    // 1. Get all ticket types for this event
+    const ticketTypes = await TicketType.find({ event: eventId }).select("_id name").lean();
     const ticketTypeIds = ticketTypes.map(tt => tt._id);
     
+    if (ticketTypeIds.length === 0) {
+      return [];
+    }
+
     // Create ticket type name map
     const typeNameMap: Record<string, string> = {};
     ticketTypes.forEach((tt: any) => {
       typeNameMap[tt._id.toString()] = tt.name;
     });
 
-    // 3. Get checked-in tickets with orderId populated
+    // 2. Get checked-in tickets
     const tickets = await Ticket.find({
       ticketTypeId: { $in: ticketTypeIds },
       status: "checked_in"
-    })
-    .populate({
-      path: 'orderId',
-      select: 'userId',  // Using userId field
-      model: 'Order'
     })
     .sort({ updatedAt: -1 })
     .limit(50)
     .lean();
 
-    console.log(`Found ${tickets.length} checked-in tickets for event ${eventId}`);
+    console.log(`Found ${tickets.length} tickets`);
 
-    // 4. Process each ticket to get user information
+    // 3. Process each ticket
     const enrichedTickets: TicketLogItem[] = [];
 
     for (const ticket of tickets as any[]) {
-      let buyerName: string | undefined = "Unknown Customer";
+      let buyerName: string | undefined;
       let buyerEmail: string | undefined;
-      
-      // Check if order exists and has userId
-      if (ticket.orderId && ticket.orderId.userId) {
-        try {
-          // Find the user associated with the order using userId
-          const user = await User.findById(ticket.orderId.userId)
-            .select('name email firstName lastName')
-            .lean();
+      let displayName = "Unknown Customer";
+
+      // Step 1: Get the order using orderId
+      if (ticket.orderId) {
+        const order = await Order.findById(ticket.orderId).lean();
+        
+        if (order) {
+          console.log(`Found order ${ticket.orderId}`);
           
-          if (user) {
-            // Use user's name if available
-            if (user.name) {
-              buyerName = user.name;
-            } else if (user.firstName || user.lastName) {
-              buyerName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
-            } else {
-              buyerName = "User Account";
-            }
+          // Step 2: Get the user using order.userId (not order.user)
+          if (order.userId) {
+            const user = await User.findById(order.userId).select('name email firstName lastName').lean();
             
-            buyerEmail = user.email;
-            console.log(`Found user ${buyerName} (${buyerEmail}) for order ${ticket.orderId._id}`);
+            if (user) {
+              // Construct name from available fields
+              if (user.name) {
+                buyerName = user.name;
+              } else if (user.firstName || user.lastName) {
+                buyerName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+              } else {
+                buyerName = "User Account";
+              }
+              buyerEmail = user.email;
+              console.log(`Found user: ${buyerName} (${buyerEmail})`);
+            } else {
+              console.log(`User ${order.userId} not found`);
+            }
           } else {
-            console.log(`User with ID ${ticket.orderId.userId} not found`);
+            console.log(`Order has no userId field`);
           }
-        } catch (error) {
-          console.error(`Error fetching user for order ${ticket.orderId._id}:`, error);
+        } else {
+          console.log(`Order ${ticket.orderId} not found`);
         }
-      } else if (!ticket.orderId) {
-        console.log(`Ticket ${ticket._id} has no orderId`);
-      } else {
-        console.log(`Order ${ticket.orderId._id} has no userId field`);
-      }
-      
-      // Check if ticket has attendee name (this might be different from buyer)
-      if (ticket.attendeeName && ticket.attendeeName.trim()) {
-        // If we have an attendee name, use that as the display name
-        console.log(`Ticket ${ticket._id} has attendee name: ${ticket.attendeeName}`);
       }
 
-      // Format the result - only include properties that exist in TicketLogItem type
+      // Determine display name
+      if (ticket.attendeeName && ticket.attendeeName.trim()) {
+        displayName = ticket.attendeeName.trim();
+      } else if (buyerName && buyerName.trim()) {
+        displayName = buyerName.trim();
+      }
+
       enrichedTickets.push({
         id: ticket._id.toString(),
         ticketCode: ticket.ticketCode,
         status: ticket.status,
-        attendeeName: ticket.attendeeName && ticket.attendeeName.trim() 
-          ? ticket.attendeeName.trim() 
-          : buyerName, // Fall back to buyer name if no attendee name
+        attendeeName: displayName,
         ticketType: typeNameMap[ticket.ticketTypeId.toString()] || "Unknown Type",
         timestamp: ticket.updatedAt ? new Date(ticket.updatedAt).toISOString() : new Date().toISOString(),
         purchaseDate: ticket.createdAt ? new Date(ticket.createdAt).toLocaleDateString() : "Unknown",
-        orderId: ticket.orderId ? ticket.orderId._id.toString() : "N/A",
-        buyerName: buyerName,
-        buyerEmail: buyerEmail
-        // Removed scannedBy and checkInMethod as they don't exist in TicketLogItem type
+        orderId: ticket.orderId ? ticket.orderId.toString() : "N/A",
+        buyerName,
+        buyerEmail
       });
     }
 
-    console.log(`Returning ${enrichedTickets.length} enriched tickets with user info`);
+    console.log(`Returning ${enrichedTickets.length} enriched tickets`);
     return enrichedTickets;
 
   } catch (error) {
@@ -246,120 +231,103 @@ export async function getEventLogs(eventId: string): Promise<TicketLogItem[]> {
 }
 
 /**
- * Alternative method using aggregation pipeline with correct field names
+ * Export event logs as CSV
  */
-export async function getEventLogsAggregate(eventId: string): Promise<TicketLogItem[]> {
+export async function exportEventLogs(eventId: string): Promise<string> {
   await dbConnect();
 
   try {
-    if (!mongoose.Types.ObjectId.isValid(eventId)) {
-      return [];
+    const logs = await getEventLogs(eventId);
+    
+    if (logs.length === 0) {
+      return "";
     }
 
-    const result = await Ticket.aggregate([
-      // 1. Join with TicketType to filter by event
-      {
-        $lookup: {
-          from: 'tickettypes',
-          localField: 'ticketTypeId',
-          foreignField: '_id',
-          as: 'ticketType'
-        }
-      },
-      { $unwind: '$ticketType' },
-      
-      // 2. Filter by event and status
-      {
-        $match: {
-          'ticketType.event': new mongoose.Types.ObjectId(eventId),
-          status: 'checked_in'
-        }
-      },
-      
-      // 3. Join with Order using orderId
-      {
-        $lookup: {
-          from: 'orders',
-          localField: 'orderId',
-          foreignField: '_id',
-          as: 'order'
-        }
-      },
-      { $unwind: { path: '$order', preserveNullAndEmptyArrays: true } },
-      
-      // 4. Join with User through Order.userId
-      {
-        $lookup: {
-          from: 'users',
-          localField: 'order.userId',  // Using userId field
-          foreignField: '_id',
-          as: 'user'
-        }
-      },
-      { $unwind: { path: '$user', preserveNullAndEmptyArrays: true } },
-      
-      // 5. Sort and limit
-      { $sort: { updatedAt: -1 } },
-      { $limit: 50 },
-      
-      // 6. Project the final result
-      {
-        $project: {
-          _id: 1,
-          ticketCode: 1,
-          status: 1,
-          updatedAt: 1,
-          createdAt: 1,
-          attendeeName: 1,
-          'order._id': 1,
-          'order.userId': 1,
-          'ticketType.name': 1,
-          'user.name': 1,
-          'user.email': 1,
-          'user.firstName': 1,
-          'user.lastName': 1
-        }
-      }
+    // Create CSV header
+    const headers = [
+      'Ticket ID',
+      'Ticket Code',
+      'Attendee Name',
+      'Ticket Type',
+      'Status',
+      'Check-in Time',
+      'Purchase Date',
+      'Order ID',
+      'Buyer Name',
+      'Buyer Email'
+    ];
+
+    // Create CSV rows
+    const rows = logs.map(log => [
+      log.id,
+      log.ticketCode,
+      log.attendeeName,
+      log.ticketType,
+      log.status,
+      log.timestamp,
+      log.purchaseDate,
+      log.orderId,
+      log.buyerName || '',
+      log.buyerEmail || ''
     ]);
 
-    return result.map((item: any) => {
-      // Determine the best name to display
-      let displayName = "Unknown Customer";
-      
-      // Priority: attendeeName > user name > user first/last name
-      if (item.attendeeName && item.attendeeName.trim()) {
-        displayName = item.attendeeName.trim();
-      } else if (item.user?.name) {
-        displayName = item.user.name;
-      } else if (item.user?.firstName || item.user?.lastName) {
-        displayName = `${item.user.firstName || ''} ${item.user.lastName || ''}`.trim();
-      }
-      
-      // Determine buyer name (actual purchaser)
-      let buyerName = "Unknown Customer";
-      if (item.user?.name) {
-        buyerName = item.user.name;
-      } else if (item.user?.firstName || item.user?.lastName) {
-        buyerName = `${item.user.firstName || ''} ${item.user.lastName || ''}`.trim();
-      }
-      
-      return {
-        id: item._id.toString(),
-        ticketCode: item.ticketCode,
-        status: item.status,
-        attendeeName: displayName,
-        ticketType: item.ticketType?.name || "Unknown Type",
-        timestamp: item.updatedAt ? new Date(item.updatedAt).toISOString() : new Date().toISOString(),
-        purchaseDate: item.createdAt ? new Date(item.createdAt).toLocaleDateString() : "Unknown",
-        orderId: item.order?._id?.toString() || "N/A",
-        buyerName: buyerName,
-        buyerEmail: item.user?.email
-        // Removed scannedBy and checkInMethod as they don't exist in TicketLogItem type
-      };
-    });
+    // Combine header and rows
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    return csvContent;
 
   } catch (error) {
-    console.error("Aggregation error:", error);
-    return [];
+    console.error("Failed to export logs:", error);
+    return "";
+  }
+}
+
+/**
+ * Get event statistics (for real-time updates)
+ */
+export async function getEventStats(eventId: string): Promise<{
+  checkedIn: number;
+  total: number;
+  lastCheckIn: string | null;
+}> {
+  await dbConnect();
+
+  try {
+    // 1. Get all ticket types for this event
+    const ticketTypes = await TicketType.find({ event: eventId }).select('_id');
+    const ticketTypeIds = ticketTypes.map(tt => tt._id);
+
+    // Count total tickets
+    const totalTickets = await Ticket.countDocuments({
+      ticketTypeId: { $in: ticketTypeIds }
+    });
+
+    // Count checked-in tickets
+    const checkedInTickets = await Ticket.countDocuments({
+      ticketTypeId: { $in: ticketTypeIds },
+      status: 'checked_in'
+    });
+
+    // Get last check-in time
+    const lastCheckedTicket = await Ticket.findOne({
+      ticketTypeId: { $in: ticketTypeIds },
+      status: 'checked_in'
+    })
+    .sort({ updatedAt: -1 })
+    .select('updatedAt')
+    .lean();
+
+    return {
+      checkedIn: checkedInTickets,
+      total: totalTickets,
+      lastCheckIn: lastCheckedTicket?.updatedAt?.toISOString() || null
+    };
+
+  } catch (error) {
+    console.error("Failed to get event stats:", error);
+    return { checkedIn: 0, total: 0, lastCheckIn: null };
   }
 }

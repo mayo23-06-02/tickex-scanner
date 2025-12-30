@@ -7,12 +7,14 @@ interface ManualEntryProps {
   onSubmit: (code: string) => void;
   onCancel?: () => void;
   isOpen: boolean;
+  isLoading?: boolean;
 }
 
 export default function ManualEntry({
   onSubmit,
   onCancel,
   isOpen,
+  isLoading,
 }: ManualEntryProps) {
   const [code, setCode] = useState("");
 
@@ -55,10 +57,10 @@ export default function ManualEntry({
 
           <button
             type="submit"
-            disabled={code.length === 0}
+            disabled={code.length === 0 || isLoading}
             className="w-full bg-linear-to-r from-emerald-500 to-cyan-500 text-white py-4 rounded-2xl font-bold text-lg hover:shadow-lg hover:shadow-emerald-500/20 disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all"
           >
-            Check In
+            {isLoading ? "Checking..." : "Check In"}
           </button>
         </form>
 

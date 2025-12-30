@@ -17,7 +17,7 @@ export interface Ticket {
 export type ScanStatus = "valid" | "invalid" | "duplicate" | "error";
 
 export type ScanResponse =
-  | { success: true; ticket: { name: string; type: string; id: string } }
+  | { success: true; ticket: { name: string; type: string; id: string; ticketNumber: string } }
   | {
       success: false;
       error: "NOT_FOUND" | "WRONG_EVENT" | "ALREADY_USED" | "REVOKED";
